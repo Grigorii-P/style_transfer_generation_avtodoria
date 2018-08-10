@@ -4,9 +4,10 @@
 
 from __future__ import print_function
 
-import numpy as np
-import cv2
 import os
+from utils import *
+from random import shuffle
+from os.path import join
 from time import time
 import torch
 import torch.nn as nn
@@ -20,11 +21,43 @@ import copy
 import warnings
 warnings.filterwarnings('ignore')
 
-path_to_imgs = '/ssd480/grisha/style_transfer/images'
+path_to_cropped_imgs = '/ssd480/grisha/plates_generation/generated_400000_cropped_VJ'
+path_to_save = '/ssd480/grisha/style_transfer/result'
+num_style_imgs = 30
+
+loader = transforms.Compose([
+    transforms.Scale(imsize),  # scale imported image
+    transforms.ToTensor()])  # transform it into a torch tensor
+
+unloader = transforms.ToPILImage()  # reconvert into PIL image
+
+use_cuda = torch.cuda.is_available()
+dtype = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
+
+cnn = models.vgg19(pretrained=True).features
+# move it to the GPU if possible:
+if use_cuda:
+    cnn = cnn.cuda()
 
 
 def image_loader(image_name):
     image = cv2.imread(image_name)
+    image = Image.fromarray(image)
+
+    #     image = Image.open(image_name)
+    image = image.resize((imsize, imsize), Image.ANTIALIAS)
+    image = Variable(loader(image))
+    # fake batch dimension required to fit network's input dimensions
+    image = image.unsqueeze(0)
+    return image
+
+
+def image_loader_generated():
+    # we don't load but generate an image
+    image = get_random_plate()
+    # we have to save and write image, otherwise we can't get third dimension equal to 3
+    cv2.imwrite('temp.jpg', image)
+    image = cv2.imread('temp.jpg')
     image = Image.fromarray(image)
 
     #     image = Image.open(image_name)
@@ -114,8 +147,7 @@ class StyleLoss(nn.Module):
 # desired depth layers to compute style/content losses :
 content_layers_default = ['conv_4']
 style_layers_default = ['conv_1', 'conv_2', 'conv_3', 'conv_4', 'conv_5']
-def get_style_model_and_losses(cnn, style_img, content_img,
-                               style_weight=1000, content_weight=1,
+def get_style_model_and_losses(cnn, style_img, content_img, style_weight=1000, content_weight=1,
                                content_layers=content_layers_default,
                                style_layers=style_layers_default):
     cnn = copy.deepcopy(cnn)
@@ -192,14 +224,12 @@ def get_input_param_optimizer(input_img):
 def run_style_transfer(cnn, content_img, style_img, input_img, num_steps=300,
                        style_weight=1000, content_weight=1):
     """Run the style transfer."""
-    print('Building the style transfer model..')
     # получим нашу модель и ссылки на лосс слои
     model, style_losses, content_losses = get_style_model_and_losses(cnn,
                                                                      style_img, content_img, style_weight,
                                                                      content_weight)
     input_param, optimizer = get_input_param_optimizer(input_img)
 
-    print('Optimizing..')
     run = [0]
     while run[0] <= num_steps:
 
@@ -220,13 +250,14 @@ def run_style_transfer(cnn, content_img, style_img, input_img, num_steps=300,
             for cl in content_losses:
                 content_score += cl.backward()
 
-            # каждые 50 итераций будем проверять прогресс
             run[0] += 1
-            if run[0] % 50 == 0:
-                print("run {}:".format(run))
-                print('Style Loss : {:4f} Content Loss: {:4f}'.format(
-                    style_score.data[0], content_score.data[0]))
-                print()
+
+            # каждые 50 итераций будем проверять прогресс
+            # if run[0] % 50 == 0:
+            #     print("run {}:".format(run))
+            #     print('Style Loss : {:4f} Content Loss: {:4f}'.format(
+            #         style_score.data[0], content_score.data[0]))
+            #     print()
 
             return style_score + content_score
 
@@ -239,42 +270,29 @@ def run_style_transfer(cnn, content_img, style_img, input_img, num_steps=300,
     return input_param.data
 
 
-use_cuda = torch.cuda.is_available()
-dtype = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
-
-# imsize = 512 if use_cuda else 128  # use small size if no gpu
-# TODO change to 128
-imsize = 256
-
-loader = transforms.Compose([
-    transforms.Scale(imsize),  # scale imported image
-    transforms.ToTensor()])  # transform it into a torch tensor
-unloader = transforms.ToPILImage()  # reconvert into PIL image
-
-cnn = models.vgg19(pretrained=True).features
-# move it to the GPU if possible:
-if use_cuda:
-    cnn = cnn.cuda()
-
-content_img = image_loader(os.path.join(path_to_imgs, "plate_two_lines_content.jpg")).type(dtype)
-style_img = image_loader(os.path.join(path_to_imgs, "plate_style.jpg")).type(dtype)
-assert style_img.size() == content_img.size(), "style and content images are not of the same size"
-input_img = content_img.clone()
+style_imgs = os.listdir(path_to_cropped_imgs)
+shuffle(style_imgs)
+style_imgs = [x for x in style_imgs if '_temp' not in x]
+style_imgs = style_imgs[:num_style_imgs]
 
 t = 0
-count = 0
-weights = [250, 500, 1000, 2000]
-iters = [200, 300, 500]
-for w in weights:
-    for it in iters:
-        t0 = time()
-        output = run_style_transfer(cnn, content_img, style_img, input_img, style_weight=w, content_weight=1, num_steps=it)
-        t += time() - t0
-        count += 1
+print('Building the style transfer model..')
+print('Optimizing {} images'.format(len(style_imgs)))
+for i, item in enumerate(style_imgs):
+    style_img = image_loader(join(path_to_cropped_imgs, item)).type(dtype)
+    content_img = image_loader_generated().type(dtype)
+    assert style_img.size() == content_img.size(), "style and content images are not of the same size"
+    input_img = content_img.clone()
 
-        imsave(output, os.path.join(path_to_imgs, 'res/' + str(w) + '_' + str(it) + '.jpg'))
+    t0 = time()
+    output = run_style_transfer(cnn, content_img, style_img, input_img, style_weight=500, num_steps=150)
+    t += time() - t0
+    imsave(output, join(path_to_save, item))
+
+    if i % 5 == 0:
+        print('{} images are ready'.format(i))
 
 print('-'*30)
-print('Average time per sample - {:.2f} sec'.format(t/count))
+print('Average time per sample - {:.2f} sec'.format(t/len(style_imgs)))
 print('-'*30)
 

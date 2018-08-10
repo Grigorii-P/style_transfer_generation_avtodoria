@@ -38,8 +38,8 @@ def image_loader(image_name):
     return image
 
 
-style_img = image_loader("images/23.jpg").type(dtype)
-content_img = image_loader("images/plate_content.jpg").type(dtype)
+style_img = image_loader("/home/grigorii/Desktop/style_transfer/images/plate_style.jpg").type(dtype)
+content_img = image_loader("/home/grigorii/Desktop/style_transfer/images/plate_content.jpg").type(dtype)
 
 assert style_img.size() == content_img.size(), "we need to import style and content images of the same size"
 
