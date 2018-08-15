@@ -1,4 +1,6 @@
 import cv2
+import os
+import json
 from os.path import join
 from random import choice
 
@@ -7,10 +9,12 @@ alphabet = ['A', 'B', 'C', 'E', 'H', 'K', 'M', 'O', 'P', 'T', 'X', 'Y']
 digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
 
 path_templates = '/ssd480/grisha/plates_generation/templates'
+path_jsons = "/ssd480/data/metadata/"
 # path_to_cropped_imgs = '/home/grigorii/Desktop/style_transfer/test'
 # path_to_save = '/home/grigorii/Desktop/style_transfer/save'
 # path_templates = '/home/grigorii/Desktop/plates_generator/templates'
 
+# TODO add some more comments
 area_number_two_line = (39, 59, 131, 328) # whole area for 6 first elements on a plate
 area_two_line_region_2 = (179, 24, 273, 177) # region area
 area_two_line_region_3 = (179, 218, 273, 346) # region area
@@ -23,7 +27,6 @@ dy_l_two_line = area_two_line_region_2[2] - area_two_line_region_2[0] - 5
 dx_r_two_line = 62 - 2
 dy_r_two_line = dy_l_two_line
 
-# TODO change to 128
 imsize = 128
 
 
@@ -78,3 +81,63 @@ def get_random_plate():
     img = get_two_line_plate_img(num)
     img = cv2.resize(img, (imsize, imsize))
     return img
+
+
+def printing(s):
+    print('-' * 30)
+    print(s)
+    print('-' * 30)
+
+
+def all_images_file():
+    all_images = {}
+    shift = 5
+
+    if not os.path.exists('all_images.json'):
+        printing('Creating all_images file...')
+        files = os.listdir(path_jsons)
+        json_list = []
+        for file in files:
+            if file.endswith(".json"):
+                json_list.append(file)
+
+        data_all = []
+        for json_file in json_list:
+            with open(join(path_jsons, json_file)) as f:
+                data = json.load(f)
+                data_all.append(data)
+                for i, item in enumerate(data['results']):
+
+                    # add first image from two
+                    img_name = item['firstOct']['photoProof']['link'].split('/')[-1]
+                    left = item['firstOct']['photoProof']['bounds']['leftBorder']
+                    top = item['firstOct']['photoProof']['bounds']['topBorder']
+                    right = item['firstOct']['photoProof']['bounds']['rightBorder']
+                    bottom = item['firstOct']['photoProof']['bounds']['bottomBorder']
+                    number = item['firstOct']['correctedCarNumber']
+                    middle_part = number['middleCarNumber']
+                    region_part = number['regionCarNumber'].split(' ')[0]
+                    all_images[img_name] = {'coords':(left, top - shift, right, bottom + shift),
+                                           'car_number':list(middle_part + region_part)}
+
+                    # add first image from two
+                    img_name = item['secondOct']['photoProof']['link'].split('/')[-1]
+                    left = item['secondOct']['photoProof']['bounds']['leftBorder']
+                    top = item['secondOct']['photoProof']['bounds']['topBorder']
+                    right = item['secondOct']['photoProof']['bounds']['rightBorder']
+                    bottom = item['secondOct']['photoProof']['bounds']['bottomBorder']
+                    number = item['secondOct']['correctedCarNumber']
+                    middle_part = number['middleCarNumber']
+                    region_part = number['regionCarNumber'].split(' ')[0]
+                    all_images[img_name] = {'coords':(left, top - shift, right, bottom + shift),
+                                           'car_number':list(middle_part + region_part)}
+
+        with open('all_images.json', 'w') as fp:
+            json.dump(all_images, fp)
+
+    else:
+        printing('`all_images` file already exists')
+        with open('all_images.json', 'r') as fp:
+            all_images = json.load(fp)
+
+    return all_images

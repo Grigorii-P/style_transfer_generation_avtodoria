@@ -22,8 +22,9 @@ import warnings
 warnings.filterwarnings('ignore')
 
 path_to_cropped_imgs = '/ssd480/grisha/plates_generation/generated_400000_cropped_VJ'
-path_to_save = '/ssd480/grisha/style_transfer/result'
-num_style_imgs = 30
+path_to_save = '/ssd480/data/two_line_plates_generated/new_result_w_200_r_128'
+path_to_metadata = join(path_to_save, 'meta.txt')
+num_style_imgs = 12000
 
 loader = transforms.Compose([
     transforms.Scale(imsize),  # scale imported image
@@ -60,7 +61,7 @@ def image_loader_generated():
     image = cv2.imread('temp.jpg')
     image = Image.fromarray(image)
 
-    #     image = Image.open(image_name)
+    # image = Image.open(image_name)
     image = image.resize((imsize, imsize), Image.ANTIALIAS)
     image = Variable(loader(image))
     # fake batch dimension required to fit network's input dimensions
@@ -278,19 +279,22 @@ style_imgs = style_imgs[:num_style_imgs]
 t = 0
 print('Building the style transfer model..')
 print('Optimizing {} images'.format(len(style_imgs)))
-for i, item in enumerate(style_imgs):
-    style_img = image_loader(join(path_to_cropped_imgs, item)).type(dtype)
-    content_img = image_loader_generated().type(dtype)
-    assert style_img.size() == content_img.size(), "style and content images are not of the same size"
-    input_img = content_img.clone()
+all_images = all_images_file()
+with open(path_to_metadata, 'w') as f:
+    for i, item in enumerate(style_imgs):
+        style_img = image_loader(join(path_to_cropped_imgs, item)).type(dtype)
+        content_img = image_loader_generated().type(dtype)
+        assert style_img.size() == content_img.size(), "style and content images are not of the same size"
+        input_img = content_img.clone()
 
-    t0 = time()
-    output = run_style_transfer(cnn, content_img, style_img, input_img, style_weight=500, num_steps=150)
-    t += time() - t0
-    imsave(output, join(path_to_save, item))
+        t0 = time()
+        output = run_style_transfer(cnn, content_img, style_img, input_img, style_weight=200, num_steps=150)
+        t += time() - t0
+        imsave(output, join(path_to_save, item))
+        f.write('{} {}\n'.format(item, all_images[item]['car_number']))
 
-    if i % 5 == 0:
-        print('{} images are ready'.format(i))
+        if i % 100 == 0:
+            print('{} images are ready'.format(i))
 
 print('-'*30)
 print('Average time per sample - {:.2f} sec'.format(t/len(style_imgs)))
